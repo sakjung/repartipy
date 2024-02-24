@@ -1,0 +1,8 @@
+.venv
+.idea
+dist/
+.DS_Store
+.venv
+__pycache__
+build/
+dist/

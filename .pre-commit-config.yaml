@@ -1,0 +1,28 @@
+repos:
+  - repo: https://github.com/python-poetry/poetry
+    rev: '1.7'  # add version here
+    hooks:
+      - id: poetry-check
+      - id: poetry-lock
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: 'v0.1.14'
+    hooks:
+      # Run the formatter.
+      - id: ruff-format
+      # Run the linter.
+      - id: ruff
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest-check
+        entry: poetry run pytest
+        language: system
+        pass_filenames: false
+        # Runs only on python files
+        types: [ python ]
+        always_run: true
