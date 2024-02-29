@@ -1,9 +1,9 @@
 [tool.poetry]
 name = "repartipy"
-version = "0.1.1"
+version = "0.1.2"
 description = "Helper for handling PySpark DataFrame partition size 📑🎛️"
 authors = ["sakjung <ssangyu123@gmail.com>"]
-license = "MIT"
+license = "Apache-2.0"
 readme = "README.md"
 homepage = "https://github.com/sakjung/repartipy"
 keywords = ['apachespark', 'spark', 'pyspark']
