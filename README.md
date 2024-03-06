@@ -23,8 +23,8 @@ Recommended when your executor resource (memory) is affordable to cache the whol
 Recommended when your executor resource (memory) is ***NOT*** affordable to cache the whole dataframe.
 `SamplingSizeEstimator` uses 'disk write and re-read (HDFS)' approach behind the scene for two reasons:
 
-1. Prevent double read from the source data (check point) -> better performance
-2. Reduce partition skewness by reading again (leverage MaxSplitBytes) -> better sampling result
+1. Prevent double read from the source like S3, which might be inefficient -> better performance
+2. Reduce partition skewness by reading data again on purpose (leverage [MaxPartitionBytes](https://spark.apache.org/docs/latest/sql-performance-tuning.html#other-configuration-options)) -> better sampling result
 
 Therefore, **you must have HDFS settings on your cluster and enough disk space.** 
 

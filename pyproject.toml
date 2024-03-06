@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "repartipy"
-version = "0.1.2"
+version = "0.1.3"
 description = "Helper for handling PySpark DataFrame partition size 📑🎛️"
 authors = ["sakjung <ssangyu123@gmail.com>"]
 license = "Apache-2.0"
@@ -15,26 +15,28 @@ build-backend = "poetry.core.masonry.api"
 ###########################################################################
 #                         MAIN DEPENDENCIES
 ###########################################################################
-
 [tool.poetry.dependencies]
-python = ">=3.8"
-pyspark = ">2"
-typing-extensions = "^4.9.0"
+python = ">=3.7"
 
 ###########################################################################
 #                         DEPENDENCY GROUPS
 ###########################################################################
+[tool.poetry.group.development]
+optional = true
+[tool.poetry.group.development.dependencies]
+pyspark = ">2"
+typing-extensions = "^4.5"
 
 [tool.poetry.group.testing]
 optional = true
 [tool.poetry.group.testing.dependencies]
-pytest = "^8"
+pytest = ">=7.4"
 
 [tool.poetry.group.linting]
 optional = true
 [tool.poetry.group.linting.dependencies]
 ruff = "^0.1.14"
-isort = "^5.13.2"
+isort = "^5.11"
 
 ###########################################################################
 #                         LINTING CONFIGURATION
