@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "repartipy"
-version = "0.1.4"
+version = "0.1.5"
 description = "Helper for handling PySpark DataFrame partition size 📑🎛️"
 authors = ["sakjung <ssangyu123@gmail.com>"]
 license = "Apache-2.0"
@@ -17,12 +17,16 @@ build-backend = "poetry.core.masonry.api"
 ###########################################################################
 [tool.poetry.dependencies]
 python = ">=3.7"
-pyspark = ">2"
 typing-extensions = "^4.5"
 
 ###########################################################################
 #                         DEPENDENCY GROUPS
 ###########################################################################
+[tool.poetry.group.development]
+optional = true
+[tool.poetry.group.development.dependencies]
+pyspark = ">2"
+
 [tool.poetry.group.testing]
 optional = true
 [tool.poetry.group.testing.dependencies]
