@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 import tempfile
 import uuid
@@ -9,12 +10,17 @@ from random import sample
 from types import TracebackType
 from typing import TYPE_CHECKING, Optional
 
+from packaging import version
 from typing_extensions import Self
 
 if TYPE_CHECKING:
     from pyspark.sql import SparkSession, DataFrame
 
-from repartipy.exceptions.exceptions import NotFullyInitializedException
+from repartipy.exceptions.exceptions import (DataFrameNotCachedException,
+                                             NotFullyInitializedException)
+from repartipy.utils import extract_spark_version
+
+logger = logging.getLogger("repartipy")
 
 
 class AbstractSizeEstimator(AbstractContextManager):
@@ -34,7 +40,12 @@ class AbstractSizeEstimator(AbstractContextManager):
         """Open the source for DataFrame reproduction."""
 
     @abstractmethod
-    def __exit__(self, __exc_type: Optional[type[BaseException]], __exc_value: Optional[BaseException], __traceback: Optional[TracebackType]) -> None:
+    def __exit__(
+        self,
+        __exc_type: Optional[type[BaseException]],
+        __exc_value: Optional[BaseException],
+        __traceback: Optional[TracebackType],
+    ) -> None:
         """Close the source for DataFrame reproduction."""
 
     @abstractmethod
@@ -51,7 +62,9 @@ class AbstractSizeEstimator(AbstractContextManager):
         :return: size of input DataFrame
         """
 
-    def get_desired_partition_count(self, desired_partition_size_in_bytes: int = DESIRED_PARTITION_SIZE_IN_BYTES) -> int:
+    def get_desired_partition_count(
+        self, desired_partition_size_in_bytes: int = DESIRED_PARTITION_SIZE_IN_BYTES
+    ) -> int:
         """Calculate the ideal number of partitions based on the `desired_partition_size_in_bytes` and the `DataFrame size`.
 
         :param desired_partition_size_in_bytes: desired size that a single partition should occupy in a DataFrame
@@ -61,6 +74,30 @@ class AbstractSizeEstimator(AbstractContextManager):
         if df_size_in_bytes < desired_partition_size_in_bytes:
             return self.MINIMUM_NUMBER_OF_PARTITION
         return math.ceil(df_size_in_bytes / desired_partition_size_in_bytes)
+
+    def _get_df_size_in_bytes(self, dataframe: DataFrame) -> int:
+        """Calculate the size of given (cached) DataFrame.
+        Since Spark v3.2.0, SessionState's executePlan() requires additional 'mode' parameter.
+
+        :param dataframe: target cached DataFrame
+        :return: size of the target DataFrame
+        """
+        if not dataframe.is_cached:
+            raise DataFrameNotCachedException
+
+        args = [dataframe._jdf.queryExecution().logical()]
+        spark_version = extract_spark_version(
+            spark_version_full_text=self.spark.version
+        )
+        if version.parse(spark_version) >= version.parse("3.2.0"):
+            args.append(dataframe._jdf.queryExecution().mode())
+        return (
+            self.spark._jsparkSession.sessionState()
+            .executePlan(*args)
+            .optimizedPlan()
+            .stats()
+            .sizeInBytes()
+        )
 
 
 class SizeEstimator(AbstractSizeEstimator):
@@ -84,9 +121,21 @@ class SizeEstimator(AbstractSizeEstimator):
         """
         if not self.df.is_cached:
             self.df.cache()
+            logger.debug("Given DataFrame has been cached!")
+        else:
+            logger.warning(
+                "Given DataFrame has already been cached. It will be un-persisted at the end of this "
+                "SizeEstimator's lifecycle. This may lead to unexpected behavior of your application"
+            )
+        self.df.foreach(lambda x: x)
         return self
 
-    def __exit__(self, __exc_type: Optional[type[BaseException]], __exc_value: Optional[BaseException], __traceback: Optional[TracebackType]) -> None:
+    def __exit__(
+        self,
+        __exc_type: Optional[type[BaseException]],
+        __exc_value: Optional[BaseException],
+        __traceback: Optional[TracebackType],
+    ) -> None:
         """Unpersist DataFrame from cache.
 
         :param __exc_type: exception type
@@ -95,21 +144,14 @@ class SizeEstimator(AbstractSizeEstimator):
         """
         if self.df.is_cached:
             self.df.unpersist()
+            logger.debug("Given DataFrame has been un-persisted from cache!")
 
     def estimate(self) -> int:
         """Estimate the size of a DataFrame using Spark execution plan statistics.
 
         :return: size of input DataFrame
         """
-        dataframe = self.reproduce()
-        dataframe.foreach(lambda x: x)
-        return (
-            self.spark._jsparkSession.sessionState()
-            .executePlan(dataframe._jdf.queryExecution().logical(), dataframe._jdf.queryExecution().mode())
-            .optimizedPlan()
-            .stats()
-            .sizeInBytes()
-        )
+        return self._get_df_size_in_bytes(dataframe=self.reproduce())
 
     def reproduce(self) -> DataFrame:
         """Reproduce (i.e. read from Cache) a DataFrame,
@@ -133,7 +175,12 @@ class SamplingSizeEstimator(AbstractSizeEstimator):
     PATH_IDENTIFIER = "repartipy"
     DEFAULT_SAMPLE_COUNT = 10
 
-    def __init__(self, spark: SparkSession, df: DataFrame, sample_count: int = DEFAULT_SAMPLE_COUNT) -> None:
+    def __init__(
+        self,
+        spark: SparkSession,
+        df: DataFrame,
+        sample_count: int = DEFAULT_SAMPLE_COUNT,
+    ) -> None:
         """Init SamplingSizeEstimator.
 
         :param spark: spark session
@@ -158,10 +205,20 @@ class SamplingSizeEstimator(AbstractSizeEstimator):
         Configuration = sc._gateway.jvm.org.apache.hadoop.conf.Configuration
         self.fs = FileSystem.get(Configuration())
         self.Path = sc._gateway.jvm.org.apache.hadoop.fs.Path
-        self.temp_path = str(Path(tempfile.mkdtemp()) / self.PATH_IDENTIFIER / str(uuid.uuid4()))
+        self.temp_path = str(
+            Path(tempfile.mkdtemp()) / self.PATH_IDENTIFIER / str(uuid.uuid4())
+        )
+        self.df.write.mode("overwrite").parquet(self.temp_path)
+        logger.debug("Given DataFrame has been persisted in HDFS!")
+
         return self
 
-    def __exit__(self, __exc_type: Optional[type[BaseException]], __exc_value: Optional[BaseException], __traceback: Optional[TracebackType]) -> None:
+    def __exit__(
+        self,
+        __exc_type: Optional[type[BaseException]],
+        __exc_value: Optional[BaseException],
+        __traceback: Optional[TracebackType],
+    ) -> None:
         """Unpersist DataFrame from HDFS.
 
         :param __exc_type: exception type
@@ -170,6 +227,7 @@ class SamplingSizeEstimator(AbstractSizeEstimator):
         """
         if self.fs and self.Path and self.fs.exists(self.Path(self.temp_path)):
             self.fs.delete(self.Path(self.temp_path))
+            logger.debug("Given DataFrame has been un-persisted from HDFS!")
 
     def estimate(self) -> int:
         """Estimate the size of a DataFrame using Spark execution plan statistics.
@@ -181,24 +239,23 @@ class SamplingSizeEstimator(AbstractSizeEstimator):
 
         dataframe = self.reproduce()
         current_partition_count = dataframe.rdd.getNumPartitions()
-        sample_partition_range = sample([*range(current_partition_count)], min(self.sample_count, current_partition_count))
+        sample_partition_ids = sample(
+            [*range(current_partition_count)],
+            min(self.sample_count, current_partition_count),
+        )
         sample_dataframe = (
             dataframe.withColumn(self.PARTITION_ID_NAME, spark_partition_id())
-            .filter(col(self.PARTITION_ID_NAME).isin(sample_partition_range))
+            .filter(col(self.PARTITION_ID_NAME).isin(sample_partition_ids))
             .drop(self.PARTITION_ID_NAME)
         )
 
         sample_dataframe.cache().foreach(lambda x: x)
-        sample_df_size_in_bytes = (
-            self.spark._jsparkSession.sessionState()
-            .executePlan(sample_dataframe._jdf.queryExecution().logical(), sample_dataframe._jdf.queryExecution().mode())
-            .optimizedPlan()
-            .stats()
-            .sizeInBytes()
-        )
+        sample_df_size_in_bytes = self._get_df_size_in_bytes(dataframe=sample_dataframe)
         sample_dataframe.unpersist()
 
-        average_partition_size_in_bytes = sample_df_size_in_bytes / len(sample_partition_range)
+        average_partition_size_in_bytes = sample_df_size_in_bytes / len(
+            sample_partition_ids
+        )
         return round(average_partition_size_in_bytes * current_partition_count)
 
     def reproduce(self) -> DataFrame:
@@ -209,5 +266,4 @@ class SamplingSizeEstimator(AbstractSizeEstimator):
         """
         if not self.temp_path:
             raise NotFullyInitializedException(this=self)
-        self.df.write.mode("ignore").parquet(self.temp_path)
         return self.spark.read.parquet(self.temp_path)

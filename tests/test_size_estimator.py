@@ -3,7 +3,8 @@ from unittest import mock
 import pytest
 from _pytest.monkeypatch import MonkeyPatch
 
-from repartipy.exceptions.exceptions import NotFullyInitializedException
+from repartipy.exceptions.exceptions import (DataFrameNotCachedException,
+                                             NotFullyInitializedException)
 from repartipy.size_estimator import SamplingSizeEstimator, SizeEstimator
 
 
@@ -57,6 +58,16 @@ class TestSizeEstimator:
         """
         with pytest.raises(NotFullyInitializedException):
             SizeEstimator(spark=spark, df=input_data).estimate()
+
+    def test__get_df_size_in_bytes_not_cached(self, spark, input_data):
+        """
+        Given non-cached DataFrame
+        When call _get_df_size_in_bytes
+        Then throws exception
+        """
+        with pytest.raises(DataFrameNotCachedException):
+            se = SizeEstimator(spark=spark, df=input_data)
+            se._get_df_size_in_bytes(dataframe=input_data)
 
 
 class TestSamplingSizeEstimator:
@@ -152,3 +163,13 @@ class TestSamplingSizeEstimator:
         """
         with pytest.raises(NotFullyInitializedException):
             SamplingSizeEstimator(spark=spark, df=input_data).estimate()
+
+    def test__get_df_size_in_bytes_not_cached(self, spark, input_data):
+        """
+        Given non-cached DataFrame
+        When call _get_df_size_in_bytes
+        Then throws exception
+        """
+        with pytest.raises(DataFrameNotCachedException):
+            se = SizeEstimator(spark=spark, df=input_data)
+            se._get_df_size_in_bytes(dataframe=input_data)

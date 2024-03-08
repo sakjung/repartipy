@@ -12,8 +12,6 @@ repos:
     # Ruff version.
     rev: 'v0.1.14'
     hooks:
-      # Run the formatter.
-      - id: ruff-format
       # Run the linter.
       - id: ruff
   - repo: local

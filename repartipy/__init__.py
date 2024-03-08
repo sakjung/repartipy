@@ -1,3 +1,4 @@
 """repartipy API."""
 
-from repartipy.size_estimator import SamplingSizeEstimator, SizeEstimator
+from repartipy.size_estimator import (AbstractSizeEstimator,
+                                      SamplingSizeEstimator, SizeEstimator)
